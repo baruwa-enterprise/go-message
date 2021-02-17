@@ -40,10 +40,21 @@ func ExampleReader() {
 	}
 }
 
-func testReader(t *testing.T, r io.Reader) {
-	mr, err := mail.CreateReader(r)
+func testReader(t *testing.T, r io.Reader, tolerant bool) {
+	var mr *mail.Reader
+	var err error
+
+	if tolerant {
+		mr, err = mail.CreateReaderF(r)
+	} else {
+		mr, err = mail.CreateReader(r)
+	}
 	if err != nil {
-		t.Fatalf("mail.CreateReader(r) = %v", err)
+		if tolerant {
+			t.Fatalf("mail.CreateReaderF(r) = %v", err)
+		} else {
+			t.Fatalf("mail.CreateReader(r) = %v", err)
+		}
 	}
 	defer mr.Close()
 
@@ -52,7 +63,7 @@ func testReader(t *testing.T, r io.Reader) {
 	if err != nil {
 		t.Errorf("mr.Header.Subject() = %v", err)
 	} else if subject != wantSubject {
-		t.Errorf("mr.Header.Subject() = %v, want %v", subject, wantSubject)
+		t.Errorf("mr.Header.Subject() = '%v', want '%v'", subject, wantSubject)
 	}
 
 	i := 0
@@ -107,64 +118,102 @@ func testReader(t *testing.T, r io.Reader) {
 }
 
 func TestReader(t *testing.T) {
-	testReader(t, strings.NewReader(mailString))
+	testReader(t, strings.NewReader(mailString), false)
+	testReader(t, strings.NewReader(mailString), true)
 }
 
-func TestReader_nonMultipart(t *testing.T) {
+func testreader_nonMultipart(t *testing.T, tolerant bool) {
+	var mr *mail.Reader
+	var err error
+
 	s := "Subject: Your Name\r\n" +
 		"\r\n" +
 		"Who are you?"
 
-	mr, err := mail.CreateReader(strings.NewReader(s))
+	if tolerant {
+		mr, err = mail.CreateReaderF(strings.NewReader(s))
+	} else {
+		mr, err = mail.CreateReader(strings.NewReader(s))
+	}
+
 	if err != nil {
-		t.Fatal("Expected no error while creating reader, got:", err)
+		t.Fatalf("Expected[tolerant=%t] no error while creating reader, got: %s", tolerant, err)
 	}
 	defer mr.Close()
 
 	p, err := mr.NextPart()
 	if err != nil {
-		t.Fatal("Expected no error while reading part, got:", err)
+		t.Fatalf("Expected[tolerant=%t] no error while reading part, got: %s", tolerant, err)
 	}
 
 	if _, ok := p.Header.(*mail.InlineHeader); !ok {
-		t.Fatalf("Expected a InlineHeader, but got a %T", p.Header)
+		t.Fatalf("Expected[tolerant=%t] a InlineHeader, but got a %T", tolerant, p.Header)
 	}
 
 	expectedBody := "Who are you?"
 	if b, err := ioutil.ReadAll(p.Body); err != nil {
-		t.Error("Expected no error while reading part body, but got:", err)
+		t.Errorf("Expected[tolerant=%t] no error while reading part body, but got: %s", tolerant, err)
 	} else if string(b) != expectedBody {
-		t.Errorf("Expected part body to be:\n%v\nbut got:\n%v", expectedBody, string(b))
+		t.Errorf("Expected[tolerant=%t] part body to be:\n%v\nbut got:\n%v", tolerant, expectedBody, string(b))
 	}
 
 	if _, err := mr.NextPart(); err != io.EOF {
-		t.Fatal("Expected io.EOF while reading part, but got:", err)
+		t.Fatalf("Expected[tolerant=%t] io.EOF while reading part, but got: %s", tolerant, err)
 	}
 }
 
-func TestReader_closeImmediately(t *testing.T) {
+func TestReader_nonMultipart(t *testing.T) {
+	testreader_nonMultipart(t, false)
+	testreader_nonMultipart(t, true)
+}
+
+func testreader_closeImmediately(t *testing.T, tolerant bool) {
+	var mr *mail.Reader
+	var err error
+
 	s := "Content-Type: text/plain\r\n" +
 		"\r\n" +
 		"Who are you?"
 
-	mr, err := mail.CreateReader(strings.NewReader(s))
+	if tolerant {
+		mr, err = mail.CreateReaderF(strings.NewReader(s))
+	} else {
+		mr, err = mail.CreateReader(strings.NewReader(s))
+	}
+
 	if err != nil {
-		t.Fatal("Expected no error while creating reader, got:", err)
+		t.Fatalf("Expected[tolerant=%t] no error while creating reader, got: %s", tolerant, err)
 	}
 
 	mr.Close()
 
 	if _, err := mr.NextPart(); err != io.EOF {
-		t.Fatal("Expected io.EOF while reading part, but got:", err)
+		t.Fatalf("Expected[tolerant=%t] io.EOF while reading part, but got: %s", tolerant, err)
 	}
 }
 
-func TestReader_nested(t *testing.T) {
+func TestReader_closeImmediately(t *testing.T) {
+	testreader_closeImmediately(t, false)
+	testreader_closeImmediately(t, true)
+}
+
+func testreader_nested(t *testing.T, tolerant bool) {
+	var mr *mail.Reader
+	var err error
+
 	r := strings.NewReader(nestedMailString)
 
-	mr, err := mail.CreateReader(r)
+	if tolerant {
+		mr, err = mail.CreateReaderF(r)
+	} else {
+		mr, err = mail.CreateReader(r)
+	}
 	if err != nil {
-		t.Fatalf("mail.CreateReader(r) = %v", err)
+		if tolerant {
+			t.Fatalf("mail.CreateReaderF(r) = %v", err)
+		} else {
+			t.Fatalf("mail.CreateReader(r) = %v", err)
+		}
 	}
 	defer mr.Close()
 
@@ -181,24 +230,29 @@ func TestReader_nested(t *testing.T) {
 		case 0:
 			_, ok := p.Header.(*mail.InlineHeader)
 			if !ok {
-				t.Fatalf("Expected a InlineHeader, but got a %T", p.Header)
+				t.Fatalf("Expected[tolerant=%t] a InlineHeader, but got a %T", tolerant, p.Header)
 			}
 
 			expectedBody := "I forgot."
 			if b, err := ioutil.ReadAll(p.Body); err != nil {
-				t.Error("Expected no error while reading part body, but got:", err)
+				t.Errorf("Expected[tolerant=%t] no error while reading part body, but got: %s", tolerant, err)
 			} else if string(b) != expectedBody {
-				t.Errorf("Expected part body to be:\n%v\nbut got:\n%v", expectedBody, string(b))
+				t.Errorf("Expected[tolerant=%t] part body to be:\n%v\nbut got:\n%v", tolerant, expectedBody, string(b))
 			}
 		case 1:
 			_, ok := p.Header.(*mail.AttachmentHeader)
 			if !ok {
-				t.Fatalf("Expected an AttachmentHeader, but got a %T", p.Header)
+				t.Fatalf("Expected[tolerant=%t] an AttachmentHeader, but got a %T", tolerant, p.Header)
 			}
 
-			testReader(t, p.Body)
+			testReader(t, p.Body, false)
 		}
 
 		i++
 	}
+}
+
+func TestReader_nested(t *testing.T) {
+	testreader_nested(t, false)
+	testreader_nested(t, true)
 }

@@ -32,20 +32,33 @@ func TestNewEntity(t *testing.T) {
 	}
 }
 
-func testMakeMultipart() *Entity {
+func testMakeMultipart(tolerant bool) *Entity {
+	var e, e1, e2 *Entity
 	var h1 Header
 	h1.Set("Content-Type", "text/plain")
 	r1 := strings.NewReader("Text part")
-	e1, _ := New(h1, r1)
+	if tolerant {
+		e1, _ = NewF(h1, r1)
+	} else {
+		e1, _ = New(h1, r1)
+	}
 
 	var h2 Header
 	h2.Set("Content-Type", "text/html")
 	r2 := strings.NewReader("<p>HTML part</p>")
-	e2, _ := New(h2, r2)
+	if tolerant {
+		e2, _ = NewF(h2, r2)
+	} else {
+		e2, _ = New(h2, r2)
+	}
 
 	var h Header
 	h.Set("Content-Type", "multipart/alternative; boundary=IMTHEBOUNDARY")
-	e, _ := NewMultipart(h, []*Entity{e1, e2})
+	if tolerant {
+		e, _ = NewMultipartF(h, []*Entity{e1, e2})
+	} else {
+		e, _ = NewMultipart(h, []*Entity{e1, e2})
+	}
 	return e
 }
 
@@ -113,17 +126,23 @@ func testMultipart(t *testing.T, e *Entity) {
 }
 
 func TestNewMultipart(t *testing.T) {
-	testMultipart(t, testMakeMultipart())
+	testMultipart(t, testMakeMultipart(false))
+	testMultipart(t, testMakeMultipart(true))
+}
+
+func testNewMultiPartRead(t *testing.T, tolerant bool) {
+	e := testMakeMultipart(tolerant)
+
+	if b, err := ioutil.ReadAll(e.Body); err != nil {
+		t.Errorf("Expected[tolerant=%t] no error while reading multipart body, got %s", tolerant, err)
+	} else if s := string(b); s != testMultipartBody {
+		t.Errorf("Expected[tolerant=%t] %q as multipart body but got %q", tolerant, testMultipartBody, s)
+	}
 }
 
 func TestNewMultipart_read(t *testing.T) {
-	e := testMakeMultipart()
-
-	if b, err := ioutil.ReadAll(e.Body); err != nil {
-		t.Error("Expected no error while reading multipart body, got", err)
-	} else if s := string(b); s != testMultipartBody {
-		t.Errorf("Expected %q as multipart body but got %q", testMultipartBody, s)
-	}
+	testNewMultiPartRead(t, false)
+	testNewMultiPartRead(t, true)
 }
 
 func TestRead_multipart(t *testing.T) {
@@ -153,7 +172,7 @@ func TestRead_single(t *testing.T) {
 }
 
 func TestRead_tooBig(t *testing.T) {
-	raw := "Subject: " + strings.Repeat("A", 4096 * 1024) + "\r\n" +
+	raw := "Subject: " + strings.Repeat("A", 4096*1024) + "\r\n" +
 		"\r\n" +
 		"This header is too big.\r\n"
 	_, err := Read(strings.NewReader(raw))
@@ -209,7 +228,7 @@ func TestEntity_WriteTo_convert(t *testing.T) {
 }
 
 func TestEntity_WriteTo_multipart(t *testing.T) {
-	e := testMakeMultipart()
+	e := testMakeMultipart(false)
 
 	var b bytes.Buffer
 	if err := e.WriteTo(&b); err != nil {
@@ -328,8 +347,8 @@ func TestWalk_single(t *testing.T) {
 	}
 }
 
-func TestWalk_multipart(t *testing.T) {
-	e := testMakeMultipart()
+func testwalkMultipart(t *testing.T, tolerant bool) {
+	e := testMakeMultipart(tolerant)
 
 	want := []testWalkPart{
 		{
@@ -350,10 +369,15 @@ func TestWalk_multipart(t *testing.T) {
 
 	got, err := walkCollect(e)
 	if err != nil {
-		t.Fatalf("Entity.Walk() = %v", err)
+		t.Fatalf("Entity.Walk()[tolerant=%t] = %v", tolerant, err)
 	}
 
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("Entity.Walk() =\n%#v\nbut want:\n%#v", got, want)
+		t.Errorf("Entity.Walk()[tolerant=%t] =\n%#v\nbut want:\n%#v", tolerant, got, want)
 	}
+}
+
+func TestWalk_multipart(t *testing.T) {
+	testwalkMultipart(t, false)
+	testwalkMultipart(t, true)
 }
