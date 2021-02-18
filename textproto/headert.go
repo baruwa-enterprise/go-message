@@ -19,7 +19,12 @@ import (
 func ReadHeaderF(r *bufio.Reader) (Header, []byte, error) {
 	fs := make([]*headerField, 0, 32)
 
-	var remaining []byte
+	var (
+		remaining []byte
+		th        *headerField
+		kv, tkv   []byte
+		err       error
+	)
 
 	// The first line cannot start with a leading space.
 	if buf, err := r.Peek(1); err == nil && isSpace(buf[0]) {
@@ -32,15 +37,7 @@ func ReadHeaderF(r *bufio.Reader) (Header, []byte, error) {
 	}
 
 	for {
-		var (
-			kv, tkv []byte
-			err     error
-			tb      strings.Builder
-			th      *headerField
-			tv      string
-		)
-		kv, err = readContinuedLineSlice(r)
-		if len(kv) == 0 {
+		if kv, err = readContinuedLineSlice(r); len(kv) == 0 {
 			return newHeader(fs), remaining, err
 		}
 
@@ -50,8 +47,7 @@ func ReadHeaderF(r *bufio.Reader) (Header, []byte, error) {
 		if i < 0 {
 			// check the next line (readahead)
 			origErr := err
-			tkv, err = readContinuedLineSlice(r)
-			if err != nil {
+			if tkv, err = readContinuedLineSlice(r); err != nil {
 				// readahead failed so lets return the original failure
 				return newHeader(fs), remaining, fmt.Errorf("message: malformed MIME header line: %v", string(kv))
 			}
@@ -61,13 +57,8 @@ func ReadHeaderF(r *bufio.Reader) (Header, []byte, error) {
 				// the previous value to the last header value and then
 				// return remaining byte slice will be empty as our
 				// readahead did not encrouch on the body
-				tb.Reset()
 				th, fs = fs[len(fs)-1], fs[:len(fs)-1]
-				tv = trimAroundNewlines(kv)
-				tb.WriteString(th.v)
-				tb.WriteString(tv)
-				th.v = tb.String()
-				fs = append(fs, th)
+				appendHdrVal(th, &fs, kv)
 				return newHeader(fs), remaining, origErr
 			}
 			// we found something so lets check if it is a header
@@ -81,16 +72,11 @@ func ReadHeaderF(r *bufio.Reader) (Header, []byte, error) {
 				remaining = append(remaining, tkv...)
 				return newHeader(fs), remaining, origErr
 			}
-			// readahead found a header set to the values from the (readahead)
-			// to the normal read values after appending the value to the previous
+			// readahead found a header set the values from the (readahead) to
+			// the normal read values after appending the value to the previous
 			// header
-			tb.Reset()
 			th, fs = fs[len(fs)-1], fs[:len(fs)-1]
-			tv = trimAroundNewlines(kv)
-			tb.WriteString(th.v)
-			tb.WriteString(tv)
-			th.v = tb.String()
-			fs = append(fs, th)
+			appendHdrVal(th, &fs, kv)
 			kv = tkv
 			i = ii
 		}
@@ -124,4 +110,17 @@ func ReadHeaderF(r *bufio.Reader) (Header, []byte, error) {
 			return newHeader(fs), remaining, err
 		}
 	}
+}
+
+func appendHdrVal(th *headerField, fs *[]*headerField, kv []byte) {
+	var (
+		tb strings.Builder
+		tv string
+	)
+
+	tv = trimAroundNewlines(kv)
+	tb.WriteString(th.v)
+	tb.WriteString(tv)
+	th.v = tb.String()
+	*fs = append(*fs, th)
 }
