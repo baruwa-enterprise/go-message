@@ -39,6 +39,8 @@ func New(header Header, body io.Reader) (*Entity, error) {
 	// See https://github.com/emersion/go-message/issues/48
 	if !strings.HasPrefix(mediaType, "multipart/") {
 		enc := header.Get("Content-Transfer-Encoding")
+		// FIX: Case where the header contains "8bit;"
+		enc = strings.TrimSuffix(enc, ";")
 		if decoded, encErr := encodingReader(enc, body); encErr != nil {
 			err = UnknownEncodingError{encErr}
 		} else {
