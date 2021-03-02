@@ -121,7 +121,7 @@ func Example_transform() {
 			return nil
 		} else {
 			body := e.Body
-			if strings.HasPrefix(m.Header.Get("Content-Type"), "text/") {
+			if strings.HasPrefix(e.Header.Get("Content-Type"), "text/") {
 				body = io.MultiReader(body, strings.NewReader(poweredBy))
 			}
 			_, err := io.Copy(w, body)
